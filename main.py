@@ -35,8 +35,8 @@ async def health():
     return {"status": "ok"}
 
 
-# Static files must be mounted AFTER routes to avoid conflicts
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+# 掛載靜態資源目錄
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
