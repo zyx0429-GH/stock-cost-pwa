@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#1a1a2e">
+    <meta name="description" content="台股大戶成本分析 - 手機友善 PWA 版">
+    <title>大戶成本查詢工具</title>
+    
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    
+    <!-- 樣式 -->
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <!-- 頂部標題 -->
+    <div class="header">
+        <h1>📊 大戶成本查詢</h1>
+        <p>台股大戶持股成本分析工具</p>
+    </div>
+    
+    <div class="container">
+        <!-- ====================================================================
+            錯誤提示
+           ==================================================================== -->
+        <div id="errorMessage" class="error-message hidden"></div>
+        
+        <!-- ====================================================================
+            頁面1: 大戶成本分析
+           ==================================================================== -->
+        <div id="analyzePage" class="page">
+            <!-- 輸入區域 -->
+            <div class="card">
+                <div class="card-title">🔍 股票查詢</div>
+                <div class="input-group">
+                    <input 
+                        type="text" 
+                        id="codeInput" 
+                        placeholder="輸入股票代號 (如: 6770)"
+                        maxlength="4"
+                        inputmode="numeric"
+                        pattern="[0-9]*"
+                    >
+                    <select id="weeksInput">
+                        <option value="8">8週</option>
+                        <option value="13" selected>13週</option>
+                        <option value="22">22週</option>
+                        <option value="52">52週</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary btn-full" id="analyzeBtn" onclick="analyzeStock()">
+                    📊 開始分析
+                </button>
+            </div>
+            
+            <!-- 載入動畫 -->
+            <div id="loading" class="loading">
+                <div class="spinner"></div>
+                <p>正在抓取資料並計算成本，請稍候...</p>
+            </div>
+            
+            <!-- 分析結果 -->
+            <div id="analysisResult" class="hidden">
+                <!-- 股票資訊 -->
+                <div class="card">
+                    <div class="card-title" id="stockTitle">股票名稱</div>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span id="stockPrice" style="font-size: 20px; font-weight: 700; color: #00d2ff;">現價</span>
+                        <span id="weekLabel" class="text-secondary">區間</span>
+                    </div>
+                </div>
+                
+                <!-- 成本顯示 -->
+                <div class="card">
+                    <div class="card-title">💰 大戶成本區間</div>
+                    <div class="cost-grid" id="costGrid"></div>
+                </div>
+                
+                <!-- 關鍵指標 -->
+                <div class="card">
+                    <div class="card-title">📈 關鍵指標</div>
+                    <ul class="indicator-list" id="indicatorList"></ul>
+                </div>
+                
+                <!-- 圖表 -->
+                <div class="card">
+                    <div class="card-title">📈 大戶持股% vs 股價</div>
+                    <div class="chart-container">
+                        <canvas id="priceChart"></canvas>
+                    </div>
+                </div>
+                
+                <!-- 每週明細 -->
+                <div class="card">
+                    <div class="card-title">📋 每週詳細資料 (最近20週)</div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>日期</th>
+                                    <th>>400張%</th>
+                                    <th>>1000張%</th>
+                                    <th>集中度</th>
+                                    <th>收盤</th>
+                                </tr>
+                            </thead>
+                            <tbody id="detailTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- LINE 摘要 -->
+                <div class="card">
+                    <div class="card-title">📱 LINE 摘要 (一鍵複製)</div>
+                    <div class="summary-box" id="lineSummary"></div>
+                    <button class="btn btn-primary mt-12" id="copyBtn" onclick="copyLineSummary()">
+                        📋 一鍵複製到剪貼簿
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- ====================================================================
+            頁面2: 監測清單 (空殼)
+           ==================================================================== -->
+        <div id="watchlistPage" class="page hidden">
+            <div class="card">
+                <div class="card-title">📋 監測清單</div>
+                <div id="watchlistContent">
+                    <p class="text-center text-secondary">載入中...</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- ====================================================================
+            頁面3: 法人成本 (空殼)
+           ==================================================================== -->
+        <div id="institutionPage" class="page hidden">
+            <div class="card">
+                <div class="card-title">🏢 法人成本分析</div>
+                <p class="text-center text-secondary" style="padding: 40px 0;">
+                    功能開發中...<br>
+                    即將支援：外資、投信、自營商成本分析
+                </p>
+            </div>
+        </div>
+        
+        <!-- ====================================================================
+            頁面4: 處置篩選 (空殼)
+           ==================================================================== -->
+        <div id="disposalPage" class="page hidden">
+            <div class="card">
+                <div class="card-title">⚠️ 處置股票篩選</div>
+                <p class="text-center text-secondary" style="padding: 40px 0;">
+                    功能開發中...<br>
+                    即將支援：注意股票、處置股票即時篩選
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- ====================================================================
+        底部導航 (Tab Bar)
+       ==================================================================== -->
+    <div class="tab-bar">
+        <button class="tab-item active" data-tab="analyze" onclick="switchTab('analyze')">
+            <span class="icon">📊</span>
+            <span class="label">大戶成本</span>
+        </button>
+        <button class="tab-item" data-tab="watchlist" onclick="switchTab('watchlist')">
+            <span class="icon">📋</span>
+            <span class="label">監測清單</span>
+        </button>
+        <button class="tab-item" data-tab="institution" onclick="switchTab('institution')">
+            <span class="icon">🏢</span>
+            <span class="label">法人成本</span>
+        </button>
+        <button class="tab-item" data-tab="disposal" onclick="switchTab('disposal')">
+            <span class="icon">⚠️</span>
+            <span class="label">處置篩選</span>
+        </button>
+    </div>
+    
+    <!-- JavaScript -->
+    <script src="/app.js"></script>
+</body>
+</html>

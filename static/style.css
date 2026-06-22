@@ -1,0 +1,534 @@
+/*  ============================================================================
+    大戶成本查詢工具 - 手機優先響應式樣式
+    深色主題（投資人喜歡）、綠漲紅跌（台股慣例）
+   ============================================================================ */
+
+/* 全局設定 */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    /* 主色系 - 深色主題 */
+    --bg-primary: #1a1a2e;
+    --bg-secondary: #16213e;
+    --bg-card: #0f3460;
+    --bg-input: #1a1a2e;
+    --text-primary: #e0e0e0;
+    --text-secondary: #b0b0b0;
+    --accent: #00d2ff;
+    --accent-dark: #0099cc;
+    --green: #00e676;  /* 漲 */
+    --red: #ff5252;    /* 跌 */
+    --warning: #ffc107;
+    --border: #2a2a4a;
+    --shadow: rgba(0, 0, 0, 0.3);
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Microsoft JhengHei", "PingFang TC", sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.6;
+    padding-bottom: 80px; /* 底部導航空間 */
+    min-height: 100vh;
+}
+
+/*  ============================================================================
+    頂部標題
+   ============================================================================ */
+.header {
+    background: linear-gradient(135deg, var(--bg-secondary), var(--bg-card));
+    padding: 20px 16px;
+    text-align: center;
+    box-shadow: 0 2px 10px var(--shadow);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.header h1 {
+    font-size: 24px;
+    margin-bottom: 4px;
+    color: var(--accent);
+}
+
+.header p {
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+/*  ============================================================================
+    容器
+   ============================================================================ */
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 16px;
+}
+
+/*  ============================================================================
+    區塊卡片
+   ============================================================================ */
+.card {
+    background: var(--bg-card);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 8px var(--shadow);
+}
+
+.card-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/*  ============================================================================
+    輸入區域
+   ============================================================================ */
+.input-group {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.input-group input,
+.input-group select {
+    flex: 1;
+    min-width: 120px;
+    padding: 14px 16px;
+    font-size: 16px; /* 防止 iOS 縮放 */
+    background: var(--bg-input);
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-primary);
+    outline: none;
+    transition: border-color 0.3s;
+}
+
+.input-group input:focus,
+.input-group select:focus {
+    border-color: var(--accent);
+}
+
+.input-group input::placeholder {
+    color: var(--text-secondary);
+}
+
+/*  ============================================================================
+    按鈕
+   ============================================================================ */
+.btn {
+    padding: 14px 24px;
+    font-size: 16px;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+    color: #000;
+    flex: 1;
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 210, 255, 0.4);
+}
+
+.btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-secondary {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 2px solid var(--border);
+}
+
+.btn-secondary:hover {
+    background: var(--bg-card);
+}
+
+.btn-full {
+    width: 100%;
+}
+
+/*  ============================================================================
+    載入動畫
+   ============================================================================ */
+.loading {
+    display: none;
+    text-align: center;
+    padding: 20px;
+}
+
+.loading.active {
+    display: block;
+}
+
+.spinner {
+    border: 3px solid var(--border);
+    border-top: 3px solid var(--accent);
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 12px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/*  ============================================================================
+    成本顯示
+   ============================================================================ */
+.cost-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.cost-item {
+    background: var(--bg-secondary);
+    padding: 12px;
+    border-radius: 8px;
+    text-align: center;
+}
+
+.cost-item .label {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+.cost-item .value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--accent);
+}
+
+.cost-item .profit {
+    font-size: 14px;
+    margin-top: 4px;
+}
+
+.profit-up {
+    color: var(--green);
+}
+
+.profit-down {
+    color: var(--red);
+}
+
+/*  ============================================================================
+    指標列表
+   ============================================================================ */
+.indicator-list {
+    list-style: none;
+}
+
+.indicator-list li {
+    padding: 10px 12px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    font-size: 15px;
+}
+
+/*  ============================================================================
+    表格
+   ============================================================================ */
+.table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 0 -16px;
+    padding: 0 16px;
+}
+
+table {
+    width: 100%;
+    min-width: 700px;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+
+th {
+    background: var(--bg-secondary);
+    padding: 10px 8px;
+    text-align: center;
+    font-weight: 600;
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+td {
+    padding: 10px 8px;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+}
+
+tr:hover {
+    background: rgba(0, 210, 255, 0.05);
+}
+
+/* 漲跌顏色 */
+.up {
+    color: var(--red);
+    font-weight: 600;
+}
+
+.down {
+    color: var(--green);
+    font-weight: 600;
+}
+
+/*  ============================================================================
+    Chart.js 圖表容器
+   ============================================================================ */
+.chart-container {
+    position: relative;
+    width: 100%;
+    min-height: 300px;
+    margin-top: 16px;
+}
+
+/*  ============================================================================
+    LINE 摘要
+   ============================================================================ */
+.summary-box {
+    background: var(--bg-secondary);
+    padding: 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1.8;
+    white-space: pre-line;
+    word-break: break-all;
+}
+
+/*  ============================================================================
+    底部導航 (Tab Bar)
+   ============================================================================ */
+.tab-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--bg-secondary);
+    border-top: 2px solid var(--border);
+    display: flex;
+    justify-content: space-around;
+    padding: 8px 0;
+    z-index: 1000;
+    box-shadow: 0 -2px 10px var(--shadow);
+}
+
+.tab-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 16px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 12px;
+    transition: color 0.3s;
+    border: none;
+    background: none;
+    min-width: 64px;
+}
+
+.tab-item.active {
+    color: var(--accent);
+}
+
+.tab-item .icon {
+    font-size: 24px;
+}
+
+.tab-item .label {
+    font-size: 11px;
+}
+
+/*  ============================================================================
+    監測清單
+   ============================================================================ */
+.watchlist-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    border-bottom: 2px solid var(--border);
+}
+
+.watchlist-tab {
+    padding: 8px 16px;
+    cursor: pointer;
+    border: none;
+    background: none;
+    color: var(--text-secondary);
+    font-size: 15px;
+    border-bottom: 2px solid transparent;
+    transition: all 0.3s;
+}
+
+.watchlist-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+.watchlist-items {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.watchlist-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+.watchlist-item:hover {
+    background: var(--bg-card);
+}
+
+.watchlist-item .info {
+    flex: 1;
+}
+
+.watchlist-item .code {
+    font-weight: 700;
+    font-size: 16px;
+}
+
+.watchlist-item .name {
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+.watchlist-item .remove-btn {
+    padding: 6px 12px;
+    background: var(--red);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+/*  ============================================================================
+    錯誤提示
+   ============================================================================ */
+.error-message {
+    background: rgba(255, 82, 82, 0.1);
+    border: 1px solid var(--red);
+    color: var(--red);
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    font-size: 14px;
+}
+
+/*  ============================================================================
+    成功提示
+   ============================================================================ */
+.success-message {
+    background: rgba(0, 230, 118, 0.1);
+    border: 1px solid var(--green);
+    color: var(--green);
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    font-size: 14px;
+}
+
+/*  ============================================================================
+    響應式設計
+   ============================================================================ */
+@media (max-width: 600px) {
+    .header h1 {
+        font-size: 20px;
+    }
+    
+    .container {
+        padding: 12px;
+    }
+    
+    .card {
+        padding: 12px;
+    }
+    
+    .input-group {
+        flex-direction: column;
+    }
+    
+    .input-group input,
+    .input-group select {
+        width: 100%;
+    }
+    
+    .cost-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (min-width: 601px) {
+    .tab-bar {
+        display: none;
+    }
+    
+    body {
+        padding-bottom: 20px;
+    }
+}
+
+/*  ============================================================================
+    工具類
+   ============================================================================ */
+.hidden {
+    display: none !important;
+}
+
+.mt-12 {
+    margin-top: 12px;
+}
+
+.text-center {
+    text-align: center;
+}
+
+.text-sm {
+    font-size: 13px;
+}
+
+.text-secondary {
+    color: var(--text-secondary);
+}
