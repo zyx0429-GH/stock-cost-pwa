@@ -17,12 +17,22 @@ if sys.stderr and hasattr(sys.stderr, 'buffer'):
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 # 常數
-WORKSPACE = os.path.expanduser("~/.qclaw/workspace")
+WORKSPACE = os.environ.get('STOCK_APP_WORKSPACE', os.path.expanduser("~/.qclaw/workspace"))
 DB_PATH = os.path.join(WORKSPACE, "stock_cost.db")
 WATCHLIST_PATH = os.path.join(WORKSPACE, "stock_watchlist.json")
 REPORT_DIR = os.path.join(WORKSPACE, "stock_reports")
 TDCC_WEEKLY_CACHE = os.path.join(REPORT_DIR, "cache", "tdcc", "weekly")
 TDCC_ARCHIVE = "https://raw.githubusercontent.com/wirelessr/tdcc-opendata-archive/main/snapshots"
+
+# 確保目錄存在（雲端環境相容）
+def _ensure_dirs():
+    for d in [WORKSPACE, REPORT_DIR, TDCC_WEEKLY_CACHE]:
+        try:
+            os.makedirs(d, exist_ok=True)
+        except:
+            pass
+
+_ensure_dirs()
 
 # 持股分級
 TDCC_LV_400P = {12, 13, 14, 15}    # >400張累計
@@ -214,56 +224,69 @@ def fetch_tdcc_weekly(code: str, display_weeks: int = 22) -> List[dict]:
 # 資料庫操作
 # ============================================================================
 def init_db():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("""CREATE TABLE IF NOT EXISTS weekly_data (
-        code TEXT, date TEXT, total_shares INTEGER, holder_count INTEGER,
-        avg_shares REAL, big_shares INTEGER, big_pct REAL, big_count INTEGER,
-        cnt_400_600 INTEGER, cnt_600_800 INTEGER, cnt_800_1000 INTEGER,
-        cnt_over_1000 INTEGER, ultra_pct REAL, price REAL, fetched_at TEXT,
-        PRIMARY KEY (code, date))""")
-    conn.commit()
-    conn.close()
+    try:
+        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("""CREATE TABLE IF NOT EXISTS weekly_data (
+            code TEXT, date TEXT, total_shares INTEGER, holder_count INTEGER,
+            avg_shares REAL, big_shares INTEGER, big_pct REAL, big_count INTEGER,
+            cnt_400_600 INTEGER, cnt_600_800 INTEGER, cnt_800_1000 INTEGER,
+            cnt_over_1000 INTEGER, ultra_pct REAL, price REAL, fetched_at TEXT,
+            PRIMARY KEY (code, date))""")
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[警告] 無法初始化資料庫: {e}")
 
 def save_to_db(code: str, data_list: List[dict]):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    now = datetime.datetime.now().strftime("%Y/%m/%d %H:%M")
-    for d in data_list:
-        c.execute("""INSERT OR REPLACE INTO weekly_data
-            (code,date,total_shares,holder_count,avg_shares,big_shares,big_pct,
-             big_count,cnt_400_600,cnt_600_800,cnt_800_1000,cnt_over_1000,
-             ultra_pct,price,fetched_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (code, d['date'], d['total_shares'], d['holder_count'], d['avg_shares'],
-             d['big_shares'], d['big_pct'], d['big_count'], d['cnt_400_600'],
-             d['cnt_600_800'], d['cnt_800_1000'], d['cnt_over_1000'],
-             d['ultra_pct'], d['price'], now))
-    conn.commit()
-    conn.close()
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        now = datetime.datetime.now().strftime("%Y/%m/%d %H:%M")
+        for d in data_list:
+            c.execute("""INSERT OR REPLACE INTO weekly_data
+                (code,date,total_shares,holder_count,avg_shares,big_shares,big_pct,
+                 big_count,cnt_400_600,cnt_600_800,cnt_800_1000,cnt_over_1000,
+                 ultra_pct,price,fetched_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (code, d['date'], d['total_shares'], d['holder_count'], d['avg_shares'],
+                 d['big_shares'], d['big_pct'], d['big_count'], d['cnt_400_600'],
+                 d['cnt_600_800'], d['cnt_800_1000'], d['cnt_over_1000'],
+                 d['ultra_pct'], d['price'], now))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[警告] 無法儲存資料庫: {e}")
 
 def load_from_db(code: str) -> List[dict]:
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("""SELECT date,total_shares,holder_count,avg_shares,big_shares,
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("""SELECT date,total_shares,holder_count,avg_shares,big_shares,
         big_pct,big_count,cnt_400_600,cnt_600_800,cnt_800_1000,cnt_over_1000,
         ultra_pct,price FROM weekly_data WHERE code=? ORDER BY date ASC""", (code,))
-    rows = c.fetchall()
-    conn.close()
-    if not rows:
+        rows = c.fetchall()
+        conn.close()
+        if not rows:
+            return []
+        keys = ['date', 'total_shares', 'holder_count', 'avg_shares', 'big_shares',
+                'big_pct', 'big_count', 'cnt_400_600', 'cnt_600_800', 'cnt_800_1000',
+                'cnt_over_1000', 'ultra_pct', 'price']
+        return [dict(zip(keys, r)) for r in rows]
+    except Exception as e:
+        print(f"[警告] 無法讀取資料庫: {e}")
         return []
-    keys = ['date', 'total_shares', 'holder_count', 'avg_shares', 'big_shares',
-            'big_pct', 'big_count', 'cnt_400_600', 'cnt_600_800', 'cnt_800_1000',
-            'cnt_over_1000', 'ultra_pct', 'price']
-    return [dict(zip(keys, r)) for r in rows]
 
 def get_latest_db_date(code: str) -> Optional[str]:
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT MAX(date) FROM weekly_data WHERE code=?", (code,))
-    row = c.fetchone()
-    conn.close()
-    return row[0] if row and row[0] else None
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT MAX(date) FROM weekly_data WHERE code=?", (code,))
+        row = c.fetchone()
+        conn.close()
+        return row[0] if row and row[0] else None
+    except:
+        return None
 
 # ============================================================================
 # 網頁抓取 (神秘金字塔)
