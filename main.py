@@ -38,6 +38,20 @@ async def health():
 # 掛載靜態資源目錄
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+# 其他路徑回傳 index.html (SPA 支援)
+from fastapi.responses import HTMLResponse
+
+@app.get("/{path:path}", response_class=HTMLResponse)
+async def spa_catch_all(path: str):
+    """SPA 路由 - 所有路徑都回傳 index.html"""
+    if path.startswith("api/") or path.startswith("static/"):
+        return {"detail": "Not Found"}
+    try:
+        with open("static/index.html", "r", encoding="utf-8") as f:
+            return f.read()
+    except:
+        return "<h1>大戶成本查詢工具</h1><p>載入中...</p>"
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     print(f"🚀 大戶成本查詢工具 PWA 版")
