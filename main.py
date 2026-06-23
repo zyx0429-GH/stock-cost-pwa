@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from api import router
 
 app = FastAPI(
@@ -22,12 +22,8 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# API 路由 (必須在 catch-all 之前)
 app.include_router(router, prefix="/api")
-
-
-@app.get("/")
-async def root():
-    return FileResponse("static/index.html")
 
 
 @app.get("/health")
@@ -35,22 +31,28 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/")
+async def root():
+    return FileResponse("static/index.html")
+
+
 # 掛載靜態資源目錄
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# 其他路徑回傳 index.html (SPA 支援)
-from fastapi.responses import HTMLResponse
 
+# SPA 路由 - 所有其他路徑都回傳 index.html (必須在最後)
 @app.get("/{path:path}", response_class=HTMLResponse)
 async def spa_catch_all(path: str):
     """SPA 路由 - 所有路徑都回傳 index.html"""
-    if path.startswith("api/") or path.startswith("static/"):
+    # 排除 API 和 static 路徑
+    if path.startswith("api") or path.startswith("static"):
         return {"detail": "Not Found"}
     try:
         with open("static/index.html", "r", encoding="utf-8") as f:
             return f.read()
     except:
         return "<h1>大戶成本查詢工具</h1><p>載入中...</p>"
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
