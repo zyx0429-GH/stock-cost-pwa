@@ -57,7 +57,7 @@ async def analyze_stock(req: AnalyzeRequest):
     """
     try:
         code = req.code.strip().zfill(4)
-        weeks = min(max(req.weeks, 4), 52)  # 限制 4-52 週
+        weeks = min(max(req.weeks, 1), 52)  # 限制 1-52 週（支援1週分析）
         
         print(f"\n{'='*60}")
         print(f"📊 分析請求: {code} ({weeks}週)")
