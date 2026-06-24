@@ -1,5 +1,5 @@
-// Service Worker - 網路優先策略（v1.3.1）
-const CACHE_NAME = 'stock-app-v1.3.1';
+// Service Worker - 網路優先策略（v1.3.2）
+const CACHE_NAME = 'stock-app-v1.3.2';
 const urlsToCache = [
   '/',
   '/manifest.json',

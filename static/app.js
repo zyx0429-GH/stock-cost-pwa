@@ -1,5 +1,5 @@
 /*  ============================================================================
-    大戶成本查詢工具 - 前端核心邏輯
+    大戶成本查詢工具 - 前端核心邏輯 v1.3.2
    ============================================================================ */
 
 // ============================================================================
@@ -8,15 +8,16 @@
 let currentTab = 'analyze';  // 當前頁籤
 let currentChart = null;      // Chart.js 實例
 let analysisResult = null;    // 最新分析結果
+let isAnalyzing = false;      // 防止重複點擊
 
 // ============================================================================
 // 初始化
 // ============================================================================
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('📊 大戶成本查詢工具 PWA 版啟動 v1.3.1');
+    console.log('📊 大戶成本查詢工具 PWA 版啟動 v1.3.2');
     
-    // 保險機制：頁面剛載入時，若有殘留的 loading 狀態，強制關閉
-    hideLoading();
+    // 強制清除所有 loading 狀態
+    forceClearLoading();
     
     // 註冊 Service Worker
     registerServiceWorker();
@@ -24,9 +25,24 @@ document.addEventListener('DOMContentLoaded', () => {
     // 綁定事件
     bindEvents();
     
-    // 載入監測清單
+    // 載入監測清單（不阻塞）
     loadWatchlist();
 });
+
+// 強制清除 loading（防止快取殘留）
+function forceClearLoading() {
+    const loading = document.getElementById('loading');
+    if (loading) {
+        loading.classList.remove('active');
+        loading.style.display = 'none';
+    }
+    const btn = document.getElementById('analyzeBtn');
+    if (btn) {
+        btn.disabled = false;
+        btn.textContent = '📊 開始分析';
+    }
+    isAnalyzing = false;
+}
 
 // ============================================================================
 // Service Worker 註冊
@@ -89,10 +105,12 @@ function switchTab(tabName) {
 // 股票分析
 // ============================================================================
 async function analyzeStock() {
+    if (isAnalyzing) return;  // 防重複點擊
+    
     const codeInput = document.getElementById('codeInput');
     const weeksInput = document.getElementById('weeksInput');
     const code = codeInput.value.trim();
-    const weeks = parseInt(weeksInput.value) || 13;
+    const weeks = parseInt(weeksInput.value) || 1;
     
     // 驗證輸入
     if (!code) {
@@ -105,16 +123,39 @@ async function analyzeStock() {
     codeInput.value = formattedCode;
     
     // 顯示載入動畫
+    isAnalyzing = true;
     showLoading(true);
-    startAnalysisTimeout();
     hideError();
+    
+    // 設定超時（45秒）
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+        controller.abort();
+    }, 45000);
+    
+    // 進度更新（5秒後提示冷啟動）
+    const progressTimer = setTimeout(() => {
+        const loadingText = document.querySelector('#loading p');
+        if (loadingText) {
+            loadingText.textContent = '伺服器冷啟動中，請耐心等候...';
+        }
+    }, 5000);
+    
+    // 第二段進度（15秒）
+    const progressTimer2 = setTimeout(() => {
+        const loadingText = document.querySelector('#loading p');
+        if (loadingText) {
+            loadingText.textContent = '仍在計算中，即將完成...';
+        }
+    }, 15000);
     
     try {
         // 呼叫 API
         const response = await fetch('/api/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code: formattedCode, weeks })
+            body: JSON.stringify({ code: formattedCode, weeks }),
+            signal: controller.signal
         });
         
         const result = await response.json();
@@ -131,10 +172,22 @@ async function analyzeStock() {
         
     } catch (error) {
         console.error('分析錯誤:', error);
-        showError(error.message || '分析失敗，請稍後再試');
+        if (error.name === 'AbortError') {
+            showError('分析超時（45秒），伺服器可能冷啟動中，請再試一次');
+        } else {
+            showError(error.message || '分析失敗，請稍後再試');
+        }
     } finally {
+        clearTimeout(timeoutId);
+        clearTimeout(progressTimer);
+        clearTimeout(progressTimer2);
+        isAnalyzing = false;
         hideLoading();
-        clearAnalysisTimeout();
+        // 重置進度文字
+        const loadingText = document.querySelector('#loading p');
+        if (loadingText) {
+            loadingText.textContent = '正在抓取資料並計算成本，請稍候...';
+        }
     }
 }
 
@@ -599,7 +652,23 @@ function showLoading(show) {
     }
 }
 
-// 強制關閉載入動畫（防快取殘留）
+// 強制清除所有 loading 狀態（防快取殘留 + Service Worker 亂序）
+function forceClearLoading() {
+    const loading = document.getElementById('loading');
+    if (loading) {
+        loading.classList.remove('active');
+        loading.style.display = 'none';
+    }
+    const btn = document.getElementById('analyzeBtn');
+    if (btn) {
+        btn.disabled = false;
+        btn.textContent = '📊 開始分析';
+    }
+    isAnalyzing = false;
+    console.log('✅ Loading 狀態已強制清除');
+}
+
+// 關閉載入動畫
 function hideLoading() {
     const loading = document.getElementById('loading');
     if (loading) {
@@ -608,22 +677,12 @@ function hideLoading() {
     const btn = document.getElementById('analyzeBtn');
     if (btn) {
         btn.disabled = false;
-        btn.textContent = '分析';
+        btn.textContent = '📊 開始分析';
     }
+    isAnalyzing = false;
 }
 
-// 分析超時保險（30秒強制結束）
-let analysisTimeout = null;
-function startAnalysisTimeout() {
-    clearTimeout(analysisTimeout);
-    analysisTimeout = setTimeout(() => {
-        hideLoading();
-        showError('分析超時，請稍後再試');
-    }, 30000);
-}
-function clearAnalysisTimeout() {
-    clearTimeout(analysisTimeout);
-}
+// （超時已改用 AbortController，此段保留為空）
 
 function showError(message) {
     const errorDiv = document.getElementById('errorMessage');
@@ -639,6 +698,15 @@ function hideError() {
         errorDiv.classList.add('hidden');
     }
 }
+
+// ============================================================================
+// 頁面可見性：切回頁面時清除殘留 loading
+// ============================================================================
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && !isAnalyzing) {
+        forceClearLoading();
+    }
+});
 
 // ============================================================================
 // 匯出函式供 HTML 使用

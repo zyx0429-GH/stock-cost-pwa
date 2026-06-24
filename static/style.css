@@ -175,7 +175,7 @@ body {
     載入動畫
    ============================================================================ */
 .loading {
-    display: none;
+    display: none !important;
     text-align: center;
     padding: 20px;
 }
