@@ -13,7 +13,10 @@ let analysisResult = null;    // 最新分析結果
 // 初始化
 // ============================================================================
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('📊 大戶成本查詢工具 PWA 版啟動');
+    console.log('📊 大戶成本查詢工具 PWA 版啟動 v1.3.1');
+    
+    // 保險機制：頁面剛載入時，若有殘留的 loading 狀態，強制關閉
+    hideLoading();
     
     // 註冊 Service Worker
     registerServiceWorker();
@@ -103,6 +106,7 @@ async function analyzeStock() {
     
     // 顯示載入動畫
     showLoading(true);
+    startAnalysisTimeout();
     hideError();
     
     try {
@@ -129,7 +133,8 @@ async function analyzeStock() {
         console.error('分析錯誤:', error);
         showError(error.message || '分析失敗，請稍後再試');
     } finally {
-        showLoading(false);
+        hideLoading();
+        clearAnalysisTimeout();
     }
 }
 
@@ -578,6 +583,9 @@ async function removeFromWatchlist(code) {
 // ============================================================================
 // 工具函式
 // ============================================================================
+// ============================================================================
+// 工具函式
+// ============================================================================
 function showLoading(show) {
     const loading = document.getElementById('loading');
     if (loading) {
@@ -589,6 +597,32 @@ function showLoading(show) {
         btn.disabled = show;
         btn.textContent = show ? '分析中...' : '分析';
     }
+}
+
+// 強制關閉載入動畫（防快取殘留）
+function hideLoading() {
+    const loading = document.getElementById('loading');
+    if (loading) {
+        loading.classList.remove('active');
+    }
+    const btn = document.getElementById('analyzeBtn');
+    if (btn) {
+        btn.disabled = false;
+        btn.textContent = '分析';
+    }
+}
+
+// 分析超時保險（30秒強制結束）
+let analysisTimeout = null;
+function startAnalysisTimeout() {
+    clearTimeout(analysisTimeout);
+    analysisTimeout = setTimeout(() => {
+        hideLoading();
+        showError('分析超時，請稍後再試');
+    }, 30000);
+}
+function clearAnalysisTimeout() {
+    clearTimeout(analysisTimeout);
 }
 
 function showError(message) {

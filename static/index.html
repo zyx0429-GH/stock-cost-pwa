@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#1a1a2e">
     <meta name="description" content="台股大戶成本分析 - 手機友善 PWA 版">
-    <title>大戶成本查詢工具</title>
+    <title>大戶成本查詢工具 v1.3.1</title>
+    <meta name="version" content="v1.3.1">
     
     <!-- PWA -->
     <link rel="manifest" href="/manifest.json">
@@ -49,10 +50,10 @@
                         pattern="[0-9]*"
                     >
                     <select id="weeksInput">
-                        <option value="8">8週</option>
-                        <option value="13" selected>13週</option>
-                        <option value="22">22週</option>
-                        <option value="52">52週</option>
+                        <option value="1" selected>上1週</option>
+                        <option value="2">2週</option>
+                        <option value="3">3週</option>
+                        <option value="4">4週</option>
                     </select>
                 </div>
                 <button class="btn btn-primary btn-full" id="analyzeBtn" onclick="analyzeStock()">
