@@ -175,13 +175,13 @@ body {
     載入動畫
    ============================================================================ */
 .loading {
-    display: none !important;
+    display: none;
     text-align: center;
     padding: 20px;
 }
 
 .loading.active {
-    display: block;
+    display: block !important;
 }
 
 .spinner {

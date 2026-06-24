@@ -1,7 +1,7 @@
-// Service Worker - 網路優先策略（v1.3.2）
-const CACHE_NAME = 'stock-app-v1.3.2';
+// Service Worker - 網路優先策略（v1.3.3）
+const CACHE_NAME = 'stock-app-v1.3.3';
+// 不快取 HTML 頁面本身，避免快取舊版導致 loading 卡死
 const urlsToCache = [
-  '/',
   '/manifest.json',
   'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js'
 ];

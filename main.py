@@ -14,13 +14,27 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse
+from starlette.requests import Request
 from api import router
 
 app = FastAPI(
     title="大戶成本查詢工具 PWA",
     description="台股大戶成本分析 - 手機友善版本",
-    version="1.0.0"
+    version="1.3.3"
 )
+
+# 全域回應頭：禁止快取 HTML/CSS/JS，確保每次拿到最新版
+@app.middleware("http")
+async def no_cache_middleware(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    # 對 HTML、CSS、JS 和根路徑設定禁止快取
+    if not path.startswith("/api/") and not path.startswith("/health"):
+        if path == "/" or any(path.endswith(ext) for ext in (".html", ".css", ".js", ".json", ".ico", ".png")):
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+    return response
 
 # API 路由 (必須在 catch-all 之前)
 app.include_router(router, prefix="/api")
