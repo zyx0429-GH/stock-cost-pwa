@@ -36,6 +36,19 @@ async def no_cache_middleware(request: Request, call_next):
             response.headers["Expires"] = "0"
     return response
 
+# 根目錄靜態資源（sw.js、manifest、icon 需在 static/ 之外被正確服務）
+@app.get("/sw.js")
+async def serve_sw():
+    return FileResponse("static/sw.js", media_type="application/javascript")
+
+@app.get("/manifest.json")
+async def serve_manifest():
+    return FileResponse("static/manifest.json", media_type="application/json")
+
+@app.get("/icon-192.png")
+async def serve_icon():
+    return FileResponse("static/icon-192.png", media_type="image/png")
+
 # API 路由 (必須在 catch-all 之前)
 app.include_router(router, prefix="/api")
 
@@ -55,12 +68,18 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 # SPA 路由 - 所有其他路徑都回傳 index.html (必須在最後)
+STATIC_EXTENSIONS = {".js", ".css", ".png", ".ico", ".jpg", ".jpeg", ".svg", ".json", ".woff", ".woff2", ".ttf", ".map"}
+
 @app.get("/{path:path}", response_class=HTMLResponse)
 async def spa_catch_all(path: str):
     """SPA 路由 - 所有路徑都回傳 index.html"""
     # 排除 API 和 static 路徑
     if path.startswith("api") or path.startswith("static"):
         return {"detail": "Not Found"}
+    # 排除已知靜態資源副檔名（避免 JS/CSS/圖片被當 HTML 回應）
+    for ext in STATIC_EXTENSIONS:
+        if path.endswith(ext):
+            return {"detail": "Not Found"}
     try:
         with open("static/index.html", "r", encoding="utf-8") as f:
             return f.read()
