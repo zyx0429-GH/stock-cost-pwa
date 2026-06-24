@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-核心計算邏輯 - 從 stock_cost_all.py 提取
-用於大戶成本查詢工具 PWA 版
+核心計算邏輯 - v1.3 同步桌面版
+A法(加權均價VWAP) + D法(主力精算成本)，移除B/C法
 """
 
 import sys, io, os, json, sqlite3, datetime, re
@@ -100,13 +100,11 @@ def get_stock_name(code: str) -> str:
 # TDCC 集保每週資料
 # ============================================================================
 def _tdcc_last_fridays(n: int = 22) -> List[str]:
-    """回傳最近 n 個週五的 str 列表 (YYYY-MM-DD)"""
     today = datetime.date.today()
     last_fri = today - datetime.timedelta(days=(today.weekday() - 4) % 7)
     return sorted([(last_fri - datetime.timedelta(weeks=i)).strftime("%Y-%m-%d") for i in range(n)])
 
 def _tdcc_download(date_str: str) -> Optional[Dict]:
-    """下載並解析 TDCC 單日 CSV"""
     d = os.path.join(TDCC_WEEKLY_CACHE, "csv")
     os.makedirs(d, exist_ok=True)
     cp = os.path.join(d, f"{date_str}.csv")
@@ -152,7 +150,6 @@ def _tdcc_download(date_str: str) -> Optional[Dict]:
     return out
 
 def _tdcc_fill_closes(code: str, records: List[dict]):
-    """用 yfinance 填入每週收盤價"""
     if not records:
         return
     try:
@@ -192,10 +189,6 @@ def _tdcc_fill_closes(code: str, records: List[dict]):
         print(f"[TDCC] 收盤價擷取失敗: {e}")
 
 def fetch_tdcc_weekly(code: str, display_weeks: int = 22) -> List[dict]:
-    """
-    抓取個股 TDCC 每週歷史資料
-    返回: [{date, p400, p1000, conc, p400_chg, p1000_chg, close}, ...]
-    """
     code = code.strip().zfill(4)
     fridays = _tdcc_last_fridays(display_weeks + 2)
     recs = []
@@ -294,7 +287,6 @@ def get_latest_db_date(code: str) -> Optional[str]:
 URL_TEMPLATE = "https://norway.twsthr.info/StockHolders.aspx?stock={code}"
 
 def parse_norway_html(text: str) -> List[dict]:
-    """解析神秘金字塔 HTML"""
     td_pat = re.compile(r'<td[^>]*>([^<]*?)</td>', re.IGNORECASE)
     tr_matches = list(re.finditer(r'<tr[^>]*>(.*?)</tr>', text, re.IGNORECASE | re.DOTALL))
     all_cells = []
@@ -332,13 +324,9 @@ def parse_norway_html(text: str) -> List[dict]:
     return data
 
 def fetch_stock_data(code: str, force: bool = False) -> List[dict]:
-    """
-    抓取股票大戶持股資料 + 即時價格
-    """
     code = code.strip().zfill(4)
     data = None
     
-    # 檢查快取
     if not force:
         latest = get_latest_db_date(code)
         if latest:
@@ -350,7 +338,6 @@ def fetch_stock_data(code: str, force: bool = False) -> List[dict]:
             except:
                 pass
     
-    # 從網路抓取
     if not data:
         print(f"[抓取] 從神秘金字塔抓取 {code} ...")
         try:
@@ -369,7 +356,6 @@ def fetch_stock_data(code: str, force: bool = False) -> List[dict]:
             db = load_from_db(code)
             return db if db else []
     
-    # 更新即時價格
     original_price = data[-1]['price']
     yahoo_price, price_source, price_warning = fetch_yahoo_price(code)
     
@@ -390,15 +376,10 @@ def fetch_stock_data(code: str, force: bool = False) -> List[dict]:
     return data
 
 def fetch_yahoo_price(code: str) -> Tuple[Optional[float], Optional[str], Optional[str]]:
-    """
-    從 Yahoo Finance 抓取即時股價（多重備援）
-    回傳: (price, source, warning)
-    """
     yahoo_price = None
     source = None
     warning = None
     
-    # 方法1: Yahoo Finance v8 API
     for suffix in ['.TW', '.TWO']:
         try:
             url = f"https://query1.finance.yahoo.com/v8/finance/chart/{code}{suffix}?interval=1d&range=1d"
@@ -418,7 +399,6 @@ def fetch_yahoo_price(code: str) -> Tuple[Optional[float], Optional[str], Option
             print(f'[價格] {code}{suffix} v8 API 失敗: {e}')
             continue
     
-    # 方法2: yfinance
     if not yahoo_price:
         try:
             import yfinance as yf
@@ -436,7 +416,6 @@ def fetch_yahoo_price(code: str) -> Tuple[Optional[float], Optional[str], Option
         except:
             pass
     
-    # 方法3: TWSE 證交所
     if not yahoo_price:
         try:
             url = f"https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_{code}.tw&json=1&delay=0"
@@ -463,9 +442,9 @@ def fetch_yahoo_price(code: str) -> Tuple[Optional[float], Optional[str], Option
 # 日K VWAP 計算
 # ============================================================================
 def _fetch_daily_yf(code: str, start_str: str, end_str: str) -> List[dict]:
-    """從 Yahoo Finance 取得日K"""
     try:
         import yfinance as yf
+        df = None
         for suffix in ['.TW', '.TWO']:
             try:
                 ticker = yf.Ticker(f"{code}{suffix}")
@@ -474,7 +453,7 @@ def _fetch_daily_yf(code: str, start_str: str, end_str: str) -> List[dict]:
                     break
             except:
                 continue
-        if df.empty:
+        if df is None or df.empty:
             return []
         rows = []
         for idx, row in df.iterrows():
@@ -492,7 +471,6 @@ def _fetch_daily_yf(code: str, start_str: str, end_str: str) -> List[dict]:
         return []
 
 def _weekly_vwap(daily_rows: List[dict]) -> float:
-    """計算週VWAP"""
     if not daily_rows:
         return 0.0
     total_pv = 0.0
@@ -504,10 +482,6 @@ def _weekly_vwap(daily_rows: List[dict]) -> float:
     return total_pv / total_vol if total_vol > 0 else (daily_rows[-1]['close'] if daily_rows else 0.0)
 
 def calc_daily_vwap_map(code: str, seg: List[dict]) -> Tuple[Dict, Dict, Dict]:
-    """
-    為 seg 內每週計算對應的 VWAP、週高、週低
-    回傳: (vwap_map, high_map, low_map)
-    """
     if not seg:
         return {}, {}, {}
     from datetime import timedelta as _td
@@ -548,20 +522,223 @@ def calc_daily_vwap_map(code: str, seg: List[dict]) -> Tuple[Dict, Dict, Dict]:
     return vwap_map, high_map, low_map
 
 # ============================================================================
-# 成本計算
+# 法人買賣超（D法用）
 # ============================================================================
+def fetch_foreign_trade(code, days=30):
+    """抓取三大法人逐日買賣超（TWSE + TPEx 雙源）"""
+    result = []
+    
+    is_otc = code.startswith('0') or code.startswith('2') or code.startswith('5') or code.startswith('6') or code.startswith('7') or code.startswith('8')
+    
+    if is_otc:
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                'Accept': 'application/json',
+                'Referer': 'https://www.tpex.org.tw/',
+            }
+            url = "https://www.tpex.org.tw/web/stock/3insti/daily_trade/3itrade_hedge_result.php"
+            
+            end_date = datetime.date.today()
+            check_days = min(days + 10, 30)
+            result = []
+            
+            for i in range(check_days):
+                d = end_date - datetime.timedelta(days=i)
+                roc_year = d.year - 1911
+                roc_date = f"{roc_year}/{d.month:02d}/{d.day:02d}"
+                
+                params = {'l': 'zh-tw', 'o': 'json', 'd': roc_date, 'stkno': code}
+                try:
+                    resp = requests.get(url, params=params, headers=headers, timeout=10)
+                    text = resp.content.decode('utf-8', errors='replace')
+                    j = json.loads(text)
+                    
+                    tables = j.get('tables', [])
+                    if tables and tables[0].get('data'):
+                        for row in tables[0]['data']:
+                            if row[0] == code:
+                                try:
+                                    fii_net = int(row[4].replace(',', ''))
+                                    sitc_net = int(row[7].replace(',', ''))
+                                    dealer_net = int(row[10].replace(',', ''))
+                                    total_net = int(row[-1].replace(',', ''))
+                                    
+                                    result.append({
+                                        'date': d.strftime('%Y/%m/%d'),
+                                        'fii_net': fii_net,
+                                        'sitc_net': sitc_net,
+                                        'dealer_net': dealer_net,
+                                        'total_net': total_net,
+                                    })
+                                except (ValueError, IndexError):
+                                    pass
+                                break
+                except:
+                    continue
+                
+                if len(result) >= days:
+                    break
+            
+            if result:
+                result.sort(key=lambda x: x['date'])
+                return result
+        except Exception:
+            pass
+    
+    # TWSE 上市 API
+    try:
+        url = f"https://www.twse.com.tw/exchangeReport/TWT74U"
+        params = {
+            'response': 'json',
+            'stockNo': code,
+            'type': 'day'
+        }
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        resp = requests.get(url, params=params, headers=headers, timeout=15)
+        j = resp.json()
+        if j.get('stat') == 'OK' and j.get('data'):
+            rows = j['data']
+            for r in rows:
+                try:
+                    parts = r[0].split('/')
+                    if len(parts) == 3 and int(parts[0]) < 200:
+                        date_str = f"{int(parts[0])+1911}/{parts[1]}/{parts[2]}"
+                    else:
+                        date_str = r[0]
+                    fii_net = int(r[3].replace(',', ''))
+                    sitc_net = int(r[6].replace(',', ''))
+                    dealer_net = int(r[9].replace(',', ''))
+                    total_net = fii_net + sitc_net + dealer_net
+                    result.append({
+                        'date': date_str,
+                        'fii_net': fii_net,
+                        'sitc_net': sitc_net,
+                        'dealer_net': dealer_net,
+                        'total_net': total_net,
+                    })
+                except (ValueError, IndexError):
+                    continue
+            if result:
+                return result
+    except Exception:
+        pass
+    
+    return []
+
+# ============================================================================
+# 成本計算 - v1.3: A法 + D法
+# ============================================================================
+def calc_d_cost(data, start_idx, end_idx, code=None):
+    """D法：主力精算成本
+    回傳 dict: {'cost': float, 'new_shares': float, 'inst_net': int, 'big_only': float, 'detail': list}
+    """
+    seg = data[start_idx:end_idx+1]
+    if len(seg) < 1 or not code:
+        return None
+    
+    if start_idx <= 0:
+        return None
+    
+    prev = data[start_idx - 1]
+    last = seg[-1]
+    
+    big_chg = last['big_pct'] - prev['big_pct']
+    
+    if big_chg <= 0:
+        return None
+    
+    new_shares = big_chg / 100 * last['total_shares']
+    
+    from datetime import timedelta as _td
+    try:
+        ed = datetime.datetime.strptime(last['date'].replace('/', '-'), '%Y-%m-%d')
+        sd = datetime.datetime.strptime(prev['date'].replace('/', '-'), '%Y-%m-%d')
+        sd_fetch = (sd - _td(days=3)).strftime('%Y-%m-%d')
+        ed_fetch = (ed + _td(days=3)).strftime('%Y-%m-%d')
+    except:
+        return None
+    
+    daily = _fetch_daily_yf(code, sd_fetch, ed_fetch)
+    if not daily or len(daily) < 2:
+        return None
+    
+    prev_date_str = prev['date'].replace('/', '-')
+    trading_days = [d for d in daily if d['date'] > prev_date_str]
+    
+    if not trading_days:
+        return None
+    
+    total_vol = sum(d['volume'] for d in trading_days)
+    if total_vol <= 0:
+        return None
+    
+    inst_net_total = 0
+    inst_net_map = {}
+    try:
+        inst_data = fetch_foreign_trade(code, days=(end_idx - start_idx + 1) * 7)
+        if inst_data:
+            for fd in inst_data:
+                fd_date = fd['date'].replace('/', '-')
+                net = fd.get('total_net', 0)
+                inst_net_map[fd_date] = net
+                if fd_date > prev_date_str and fd_date <= last['date'].replace('/', '-'):
+                    inst_net_total += net
+    except:
+        pass
+    
+    big_only_shares = new_shares - inst_net_total / 1000
+    
+    if big_only_shares <= 0:
+        return None
+    
+    # 按每日「非法人成交量」比例分配大戶吃貨量
+    non_inst_vols = []
+    for d in trading_days:
+        inst_net = inst_net_map.get(d['date'], 0)
+        ni_vol = max(d['volume'] - abs(inst_net), 0)
+        non_inst_vols.append(ni_vol)
+    
+    non_inst_total = sum(non_inst_vols)
+    
+    if non_inst_total <= 0:
+        non_inst_vols = [d['volume'] for d in trading_days]
+        non_inst_total = total_vol
+    
+    d_wsum = 0
+    detail = []
+    for i, d in enumerate(trading_days):
+        vol_ratio = non_inst_vols[i] / non_inst_total
+        day_shares = big_only_shares * vol_ratio
+        tp = (d['high'] + d['low'] + d['close']) / 3
+        d_wsum += tp * day_shares
+        inst_net = inst_net_map.get(d['date'], 0)
+        detail.append({
+            'date': d['date'],
+            'vol': d['volume'],
+            'non_inst_vol': non_inst_vols[i],
+            'tp': round(tp, 1),
+            'inst_net': inst_net,
+            'big_shares': round(day_shares, 0),
+        })
+    
+    d_cost = d_wsum / big_only_shares
+    
+    return {
+        'cost': round(d_cost, 2),
+        'new_shares': round(new_shares, 0),
+        'inst_net': inst_net_total,
+        'big_only': round(big_only_shares, 0),
+        'detail': detail,
+    }
+
 def calc_costs(data: List[dict], start_idx: int, end_idx: int, code: Optional[str] = None) -> Dict:
-    """
-    計算三種成本 (A/B/C法)
-    """
+    """v1.3: A法 + D法"""
     seg = data[start_idx:end_idx + 1]
     
-    # 取得每週 VWAP、週高、週低
     vwap_map = {}
-    high_map = {}
-    low_map = {}
     if code:
-        vwap_map, high_map, low_map = calc_daily_vwap_map(code, seg)
+        vwap_map, _, _ = calc_daily_vwap_map(code, seg)
     
     # A法：加權均價（使用 VWAP）
     ws = 0
@@ -578,61 +755,24 @@ def calc_costs(data: List[dict], start_idx: int, end_idx: int, code: Optional[st
                 ww += chg
     cost_a = ws / ww if ww > 0 else (sum(d['price'] for d in seg) / len(seg) if seg else None)
     
-    # B法：高低均價
-    highs = [high_map.get(d['date'], d['price']) for d in seg]
-    lows = [low_map.get(d['date'], d['price']) for d in seg]
-    cost_b_high = max(highs) if highs else None
-    cost_b_low = min(lows) if lows else None
-    cost_b = ((cost_b_low or 0) + (cost_b_high or 0)) / 2 if highs else None
+    # D法：主力精算成本
+    d_result = calc_d_cost(data, start_idx, end_idx, code=code)
+    cost_d = d_result['cost'] if isinstance(d_result, dict) else d_result
     
-    # C法：外資交叉（簡化版，使用大戶持股變動推算）
-    cost_c = None
-    cost_c_early = None
-    cost_c_recent = None
-    if code and len(seg) >= 2:
-        mid = len(seg) // 2
-        early_seg = seg[:mid]
-        recent_seg = seg[mid:]
-        
-        def calc_seg_cost(s):
-            w_buy = 0
-            t_buy = 0
-            w_sell = 0
-            t_sell = 0
-            for i in range(1, len(s)):
-                chg = s[i]['big_pct'] - s[i - 1]['big_pct']
-                p = (s[i]['price'] + s[i - 1]['price']) / 2
-                if chg > 0:
-                    w_buy += p * chg
-                    t_buy += chg
-                elif chg < 0:
-                    w_sell += p * abs(chg)
-                    t_sell += abs(chg)
-            if t_buy > 0:
-                return w_buy / t_buy
-            if t_sell > 0:
-                return w_sell / t_sell
-            return None
-        
-        cost_c = calc_seg_cost(seg)
-        cost_c_early = calc_seg_cost(early_seg)
-        cost_c_recent = calc_seg_cost(recent_seg)
-    
-    return {
+    result = {
         'a': round(cost_a, 2) if cost_a else None,
-        'b_low': round(cost_b_low, 2) if cost_b_low else None,
-        'b_high': round(cost_b_high, 2) if cost_b_high else None,
-        'b': round(cost_b, 2) if cost_b else None,
-        'c': round(cost_c, 2) if cost_c else None,
-        'c_early': round(cost_c_early, 2) if cost_c_early else None,
-        'c_recent': round(cost_c_recent, 2) if cost_c_recent else None,
+        'd': cost_d,
     }
+    
+    if isinstance(d_result, dict) and 'detail' in d_result:
+        result['d_detail'] = d_result
+    
+    return result
 
 # ============================================================================
 # 指標計算
 # ============================================================================
 def calc_momentum(data: List[dict]) -> List[dict]:
-    """計算大戶動能指標"""
     result = []
     for i in range(len(data)):
         if i == 0:
@@ -646,17 +786,15 @@ def calc_momentum(data: List[dict]) -> List[dict]:
     return result
 
 def calc_concentration(data: List[dict]) -> List[dict]:
-    """計算籌碼集中度"""
     return [{
         'date': d['date'],
         'conc': round(d['cnt_over_1000'] / d['big_count'] * 100, 2) if d['big_count'] > 0 else 0
     } for d in data]
 
 # ============================================================================
-# LINE 摘要生成
+# LINE 摘要生成 - v1.3: A+D法
 # ============================================================================
 def line_summary(code: str, name: str, data: List[dict], costs: Dict, price: float) -> str:
-    """生成 LINE 分享摘要"""
     if not data:
         return ""
     d = data[-1]
@@ -667,7 +805,6 @@ def line_summary(code: str, name: str, data: List[dict], costs: Dict, price: flo
     ue = "+" if uc > 0 else "-" if uc < 0 else "="
     conc = d['cnt_over_1000'] / d['big_count'] * 100 if d['big_count'] > 0 else 0
     
-    # 白話解讀
     if bc > 0.5:
         big_comment = "大戶明顯加碼"
     elif bc > 0:
@@ -689,21 +826,34 @@ def line_summary(code: str, name: str, data: List[dict], costs: Dict, price: flo
     
     if costs:
         lines += ["", "大戶成本:"]
-        if costs['a']:
+        if costs.get('a'):
             da = (price - costs['a']) / costs['a'] * 100
-            lines.append(f"  均價: {costs['a']:.2f}元 (浮盈{da:+.1f}%)")
-        if costs['b_low']:
-            db = (price - costs['b']) / costs['b'] * 100 if costs['b'] else 0
-            lines.append(f"  區間: {costs['b_low']:.1f}~{costs['b_high']:.1f}元 (浮盈{db:+.1f}%)")
-        if costs.get('c'):
-            dc = (price - costs['c']) / costs['c'] * 100
-            lines.append(f"  外資均價: {costs['c']:.2f}元 (浮盈{dc:+.1f}%)")
-            if costs.get('c_early'):
-                de = (price - costs['c_early']) / costs['c_early'] * 100
-                lines.append(f"  底倉: {costs['c_early']:.2f}元 (浮盈{de:+.1f}%)")
-            if costs.get('c_recent'):
-                dr = (price - costs['c_recent']) / costs['c_recent'] * 100
-                lines.append(f"  追價: {costs['c_recent']:.2f}元 (浮盈{dr:+.1f}%)")
+            lines.append(f"  A法(均價): {costs['a']:.2f}元 (浮盈{da:+.1f}%)")
+        if costs.get('d'):
+            dd = (price - costs['d']) / costs['d'] * 100
+            lines.append(f"  D法(主力精算): {costs['d']:.2f}元 (浮盈{dd:+.1f}%)")
+        
+        # D法詳細
+        d_detail = costs.get('d_detail', {})
+        if d_detail:
+            new_sh = d_detail.get('new_shares', 0)
+            inst_net = d_detail.get('inst_net', 0)
+            big_only = d_detail.get('big_only', 0)
+            lines.append(f"  大戶新增: {new_sh:,.0f}張 | 法人淨買: {inst_net/1000:+,.0f}張 | 純大戶: {big_only:,.0f}張")
+            
+            for dd_item in d_detail.get('detail', []):
+                inst_n = dd_item.get('inst_net', 0)
+                inst_str = f" 法人{inst_n/1000:+,.0f}張" if inst_n != 0 else ""
+                lines.append(f"    {dd_item['date']}: TP={dd_item['tp']:.1f} 吃貨{dd_item['big_shares']:.0f}張{inst_str}")
+        
+        if costs.get('a') and costs.get('d'):
+            spread = costs['a'] - costs['d']
+            if spread > 1:
+                lines.append(f"  比A法低{spread:.2f}元 → 主力買在低檔")
+            elif spread < -1:
+                lines.append(f"  比A法高{abs(spread):.2f}元 → 主力追高進場")
+            else:
+                lines.append(f"  與A法接近，主力成本=市場均價")
     
     # 操作建議
     if costs and costs.get('a'):
@@ -723,10 +873,9 @@ def line_summary(code: str, name: str, data: List[dict], costs: Dict, price: flo
     return "\n".join(lines)
 
 # ============================================================================
-# 快速價格查詢 (供 API 使用)
+# 快速價格查詢
 # ============================================================================
 def get_quick_price(code: str) -> Dict:
-    """快速查詢股價（不抓完整大戶資料）"""
     code = code.strip().zfill(4)
     price, source, warning = fetch_yahoo_price(code)
     name = get_stock_name(code)
@@ -759,7 +908,6 @@ DEFAULT_WATCHLIST = {
 }
 
 def load_watchlist() -> Dict:
-    """載入監測清單"""
     if os.path.exists(WATCHLIST_PATH):
         try:
             with open(WATCHLIST_PATH, 'r', encoding='utf-8') as f:
@@ -769,7 +917,6 @@ def load_watchlist() -> Dict:
     return DEFAULT_WATCHLIST
 
 def save_watchlist(watchlist: Dict):
-    """儲存監測清單"""
     os.makedirs(os.path.dirname(WATCHLIST_PATH), exist_ok=True)
     with open(WATCHLIST_PATH, 'w', encoding='utf-8') as f:
         json.dump(watchlist, f, ensure_ascii=False, indent=2)

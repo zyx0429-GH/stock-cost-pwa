@@ -127,13 +127,28 @@ async def analyze_stock(req: AnalyzeRequest):
         conc = d['cnt_over_1000'] / d['big_count'] * 100 if d['big_count'] > 0 else 0
         indicators.append(f"📊 集中度(>1000張): {conc:.1f}%")
         
-        # 成本分析
-        if costs['a']:
+        # A法成本分析
+        if costs.get('a'):
             da = (price - costs['a']) / costs['a'] * 100
             if da > 0:
-                indicators.append(f"💰 股價高於A法成本 +{da:.1f}%")
+                indicators.append(f"📐 股價高於A法成本 +{da:.1f}%")
             else:
-                indicators.append(f"💰 股價低於A法成本 {da:.1f}%")
+                indicators.append(f"📐 股價低於A法成本 {da:.1f}%")
+        
+        # D法成本分析
+        if costs.get('d'):
+            dd = (price - costs['d']) / costs['d'] * 100
+            if dd > 0:
+                indicators.append(f"🎯 股價高於D法主力成本 +{dd:.1f}%")
+            else:
+                indicators.append(f"🎯 股價低於D法主力成本 {dd:.1f}%")
+            
+            d_detail = costs.get('d_detail', {})
+            if d_detail:
+                new_sh = d_detail.get('new_shares', 0)
+                inst_net = d_detail.get('inst_net', 0)
+                big_only = d_detail.get('big_only', 0)
+                indicators.append(f"📋 大戶新增{new_sh:,.0f}張 法人{inst_net/1000:+,.0f}張 純大戶{big_only:,.0f}張")
         
         # 每週明細（供表格顯示）
         detail_weeks = []

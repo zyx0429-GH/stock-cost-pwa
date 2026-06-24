@@ -177,7 +177,7 @@ function displayCosts(costs, price) {
         const profit = ((price - costs.a) / costs.a * 100).toFixed(1);
         container.innerHTML += `
             <div class="cost-item">
-                <div class="label">📐 A法 (均價)</div>
+                <div class="label">📐 A法 (全市場均價)</div>
                 <div class="value">${costs.a.toFixed(2)}</div>
                 <div class="profit ${profit >= 0 ? 'profit-up' : 'profit-down'}">
                     ${profit >= 0 ? '+' : ''}${profit}%
@@ -186,31 +186,70 @@ function displayCosts(costs, price) {
         `;
     }
     
-    // B法
-    if (costs.b_low && costs.b_high) {
-        const avg = (costs.b_low + costs.b_high) / 2;
-        const profit = ((price - avg) / avg * 100).toFixed(1);
+    // D法
+    if (costs.d) {
+        const profit = ((price - costs.d) / costs.d * 100).toFixed(1);
         container.innerHTML += `
             <div class="cost-item">
-                <div class="label">📊 B法 (高低)</div>
-                <div class="value">${costs.b_low.toFixed(1)}~${costs.b_high.toFixed(1)}</div>
+                <div class="label">🎯 D法 (主力精算)</div>
+                <div class="value">${costs.d.toFixed(2)}</div>
                 <div class="profit ${profit >= 0 ? 'profit-up' : 'profit-down'}">
                     ${profit >= 0 ? '+' : ''}${profit}%
                 </div>
             </div>
         `;
+        
+        // D法詳細資訊
+        const dDetail = costs.d_detail;
+        if (dDetail) {
+            const newShares = dDetail.new_shares || 0;
+            const instNet = dDetail.inst_net || 0;
+            const bigOnly = dDetail.big_only || 0;
+            
+            let detailHtml = `
+                <div class="d-detail">
+                    <div class="d-summary">
+                        <span>大戶新增: ${Number(newShares).toLocaleString()}張</span>
+                        <span>法人: ${instNet >= 0 ? '+' : ''}${(instNet/1000).toFixed(0)}張</span>
+                        <span>純大戶: ${Number(bigOnly).toLocaleString()}張</span>
+                    </div>
+            `;
+            
+            if (dDetail.detail && dDetail.detail.length > 0) {
+                detailHtml += '<div class="d-daily">';
+                for (const day of dDetail.detail) {
+                    const instStr = day.inst_net !== 0 ? ` 法人${day.inst_net >= 0 ? '+' : ''}${(day.inst_net/1000).toFixed(0)}張` : '';
+                    detailHtml += `
+                        <div class="d-day">
+                            <span class="d-date">${day.date}</span>
+                            <span>TP=${day.tp}</span>
+                            <span>吃貨${day.big_shares}張</span>
+                            <span class="inst-net">${instStr}</span>
+                        </div>
+                    `;
+                }
+                detailHtml += '</div>';
+            }
+            
+            detailHtml += '</div>';
+            container.innerHTML += detailHtml;
+        }
     }
     
-    // C法
-    if (costs.c) {
-        const profit = ((price - costs.c) / costs.c * 100).toFixed(1);
+    // A/D 比較
+    if (costs.a && costs.d) {
+        const spread = (costs.a - costs.d).toFixed(2);
+        let compareText = '';
+        if (spread > 1) {
+            compareText = `D法比A法低${spread}元 → 主力買在低檔`;
+        } else if (spread < -1) {
+            compareText = `D法比A法高${Math.abs(spread)}元 → 主力追高進場`;
+        } else {
+            compareText = 'A/D接近，主力成本≈市場均價';
+        }
         container.innerHTML += `
-            <div class="cost-item">
-                <div class="label">💰 C法 (外資)</div>
-                <div class="value">${costs.c.toFixed(2)}</div>
-                <div class="profit ${profit >= 0 ? 'profit-up' : 'profit-down'}">
-                    ${profit >= 0 ? '+' : ''}${profit}%
-                </div>
+            <div class="cost-compare">
+                ${compareText}
             </div>
         `;
     }
