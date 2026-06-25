@@ -36,10 +36,18 @@ async def no_cache_middleware(request: Request, call_next):
             response.headers["Expires"] = "0"
     return response
 
-# 根目錄靜態資源（sw.js、manifest、icon 需在 static/ 之外被正確服務）
+# 根目錄靜態資源（sw.js、app.js、style.css 需在 static/ 之外被正確服務）
 @app.get("/sw.js")
 async def serve_sw():
     return FileResponse("static/sw.js", media_type="application/javascript")
+
+@app.get("/app.js")
+async def serve_app_js():
+    return FileResponse("static/app.js", media_type="application/javascript")
+
+@app.get("/style.css")
+async def serve_style():
+    return FileResponse("static/style.css", media_type="text/css")
 
 @app.get("/manifest.json")
 async def serve_manifest():
