@@ -1,204 +1,301 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#1a1a2e">
-    <meta name="description" content="台股大戶成本分析 - 手機友善 PWA 版">
-    <title>大戶成本查詢工具 v1.3.3c</title>
-    <meta name="version" content="v1.3.3c">
-    
-    <!-- PWA -->
-    <link rel="manifest" href="/manifest.json">
-    <link rel="apple-touch-icon" href="/icon-192.png">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    
-    <!-- 樣式 -->
-    <link rel="stylesheet" href="/style.css">
-    
-    <!-- ❌ 禁止 Service Worker 快取任何靜態資源（每次載入最新版） -->
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Expires" content="0">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#1a1a2e">
+<title>大戶成本查詢 v1.4</title>
+<style>
+:root {--bg:#1a1a2e;--card:#16213e;--accent:#00d2ff;--text:#e0e0e0;--secondary:#888;--red:#ff4757;--green:#2ed573;--border:rgba(255,255,255,.1)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,'Noto Sans TC',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:80px}
+.header{text-align:center;padding:16px 12px 8px}
+.header h1{font-size:20px;margin-bottom:2px}
+.header p{font-size:12px;color:var(--secondary)}
+.container{padding:0 12px}
+.card{background:var(--card);border-radius:12px;padding:14px;margin-bottom:10px}
+.card-title{font-size:13px;font-weight:700;margin-bottom:10px;color:var(--accent)}
+.input-group{display:flex;gap:8px;margin-bottom:10px}
+input,select{flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:#0f3460;color:var(--text);font-size:15px}
+.btn{display:block;width:100%;padding:12px;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;color:#fff}
+.btn-primary{background:linear-gradient(135deg,#00d2ff,#0098db)}
+.btn-primary:disabled{opacity:.5}
+.loading{display:none;text-align:center;padding:20px}
+.loading.active{display:block}
+.spinner{border:3px solid var(--border);border-top:3px solid var(--accent);border-radius:50%;width:40px;height:40px;animation:spin 1s linear infinite;margin:0 auto 12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.hidden{display:none!important}
+.error-message{background:#3d1a1a;color:var(--red);padding:10px 14px;border-radius:8px;margin-bottom:10px;font-size:13px}
+.cost-item{display:flex;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)}
+.cost-item .label{flex:1;font-size:13px}
+.cost-item .value{font-size:20px;font-weight:700;color:var(--accent);margin-right:10px}
+.profit-up{color:var(--red)}
+.profit-down{color:var(--green)}
+.d-detail{background:rgba(0,210,255,.08);border-radius:8px;padding:10px;margin-top:8px;font-size:12px}
+.d-summary{display:flex;gap:10px;margin-bottom:6px}
+.d-day{display:flex;gap:8px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+.indicator-list{list-style:none;font-size:13px;line-height:2}
+.summary-box{background:#0a1628;border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;white-space:pre-wrap;max-height:300px;overflow-y:auto;margin-bottom:10px}
+table{width:100%;font-size:11px;border-collapse:collapse}
+th,td{padding:6px 4px;border-bottom:1px solid var(--border);text-align:center}
+th{color:var(--accent);font-weight:700}
+.up{color:var(--red)}
+.down{color:var(--green)}
+.text-secondary{color:var(--secondary)}
+.text-center{text-align:center}
+.cost-compare{font-size:12px;color:var(--accent);margin-top:8px;text-align:center}
+.tab-bar{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);border-top:1px solid var(--border);z-index:100}
+.tab-item{flex:1;padding:10px 4px;border:none;background:none;color:var(--secondary);font-size:10px;cursor:pointer;text-align:center}
+.tab-item.active{color:var(--accent)}
+.tab-item .icon{display:block;font-size:18px;margin-bottom:2px}
+.chart-container{height:200px;position:relative;margin:10px 0}
+.progress-note{font-size:11px;color:var(--secondary);margin-top:5px}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
-    <!-- 頂部標題 -->
-    <div class="header">
-        <h1>📊 大戶成本查詢</h1>
-        <p>台股大戶持股成本分析工具</p>
+<div class="header"><h1>📊 大戶成本查詢</h1><p>台股大戶持股成本分析工具 v1.4</p></div>
+<div class="container">
+<div id="errorMessage" class="error-message hidden"></div>
+
+<!-- 分析頁 -->
+<div id="analyzePage">
+  <div class="card">
+    <div class="card-title">🔍 股票查詢</div>
+    <div class="input-group">
+      <input type="text" id="codeInput" placeholder="輸入股票代號" maxlength="4" inputmode="numeric">
+      <select id="weeksInput">
+        <option value="1">上1週</option><option value="2">2週</option><option value="3">3週</option><option value="4">4週</option>
+      </select>
     </div>
-    
-    <div class="container">
-        <!-- ====================================================================
-            錯誤提示
-           ==================================================================== -->
-        <div id="errorMessage" class="error-message hidden"></div>
-        
-        <!-- ====================================================================
-            頁面1: 大戶成本分析
-           ==================================================================== -->
-        <div id="analyzePage" class="page">
-            <!-- 輸入區域 -->
-            <div class="card">
-                <div class="card-title">🔍 股票查詢</div>
-                <div class="input-group">
-                    <input 
-                        type="text" 
-                        id="codeInput" 
-                        placeholder="輸入股票代號 (如: 6770)"
-                        maxlength="4"
-                        inputmode="numeric"
-                        pattern="[0-9]*"
-                    >
-                    <select id="weeksInput">
-                        <option value="1" selected>上1週</option>
-                        <option value="2">2週</option>
-                        <option value="3">3週</option>
-                        <option value="4">4週</option>
-                    </select>
-                </div>
-                <button class="btn btn-primary btn-full" id="analyzeBtn" onclick="analyzeStock()">
-                    📊 開始分析
-                </button>
-            </div>
-            
-            <!-- 載入動畫 -->
-            <div id="loading" class="loading">
-                <div class="spinner"></div>
-                <p>正在抓取資料並計算成本，請稍候...</p>
-            </div>
-            <!-- 立即清除 loading（DOM 已存在時執行，防快取殘留） -->
-            <script>
-            (function(){var l=document.getElementById('loading');if(l){l.classList.remove('active');l.style.display='none';}})();
-            </script>
-            
-            <!-- 分析結果 -->
-            <div id="analysisResult" class="hidden">
-                <!-- 股票資訊 -->
-                <div class="card">
-                    <div class="card-title" id="stockTitle">股票名稱</div>
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span id="stockPrice" style="font-size: 20px; font-weight: 700; color: #00d2ff;">現價</span>
-                        <span id="weekLabel" class="text-secondary">區間</span>
-                    </div>
-                </div>
-                
-                <!-- 成本顯示 -->
-                <div class="card">
-                    <div class="card-title">💰 大戶成本區間</div>
-                    <div class="cost-grid" id="costGrid"></div>
-                </div>
-                
-                <!-- 關鍵指標 -->
-                <div class="card">
-                    <div class="card-title">📈 關鍵指標</div>
-                    <ul class="indicator-list" id="indicatorList"></ul>
-                </div>
-                
-                <!-- 圖表 -->
-                <div class="card">
-                    <div class="card-title">📈 大戶持股% vs 股價</div>
-                    <div class="chart-container">
-                        <canvas id="priceChart"></canvas>
-                    </div>
-                </div>
-                
-                <!-- 每週明細 -->
-                <div class="card">
-                    <div class="card-title">📋 每週詳細資料 (最近20週)</div>
-                    <div class="table-container">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>日期</th>
-                                    <th>>400張%</th>
-                                    <th>>1000張%</th>
-                                    <th>集中度</th>
-                                    <th>收盤</th>
-                                </tr>
-                            </thead>
-                            <tbody id="detailTableBody"></tbody>
-                        </table>
-                    </div>
-                </div>
-                
-                <!-- LINE 摘要 -->
-                <div class="card">
-                    <div class="card-title">📱 LINE 摘要 (一鍵複製)</div>
-                    <div class="summary-box" id="lineSummary"></div>
-                    <button class="btn btn-primary mt-12" id="copyBtn" onclick="copyLineSummary()">
-                        📋 一鍵複製到剪貼簿
-                    </button>
-                </div>
-            </div>
-        </div>
-        
-        <!-- ====================================================================
-            頁面2: 監測清單 (空殼)
-           ==================================================================== -->
-        <div id="watchlistPage" class="page hidden">
-            <div class="card">
-                <div class="card-title">📋 監測清單</div>
-                <div id="watchlistContent">
-                    <p class="text-center text-secondary">載入中...</p>
-                </div>
-            </div>
-        </div>
-        
-        <!-- ====================================================================
-            頁面3: 法人成本 (空殼)
-           ==================================================================== -->
-        <div id="institutionPage" class="page hidden">
-            <div class="card">
-                <div class="card-title">🏢 法人成本分析</div>
-                <p class="text-center text-secondary" style="padding: 40px 0;">
-                    功能開發中...<br>
-                    即將支援：外資、投信、自營商成本分析
-                </p>
-            </div>
-        </div>
-        
-        <!-- ====================================================================
-            頁面4: 處置篩選 (空殼)
-           ==================================================================== -->
-        <div id="disposalPage" class="page hidden">
-            <div class="card">
-                <div class="card-title">⚠️ 處置股票篩選</div>
-                <p class="text-center text-secondary" style="padding: 40px 0;">
-                    功能開發中...<br>
-                    即將支援：注意股票、處置股票即時篩選
-                </p>
-            </div>
-        </div>
+    <button class="btn btn-primary" id="analyzeBtn">📊 開始分析</button>
+    <div class="progress-note text-center" id="progressNote"></div>
+  </div>
+
+  <div id="loading" class="loading">
+    <div class="spinner"></div>
+    <p id="loadingText">正在抓取資料並計算成本...</p>
+  </div>
+
+  <div id="analysisResult" class="hidden">
+    <div class="card">
+      <div class="card-title" id="stockTitle">---</div>
+      <div style="display:flex;justify-content:space-between">
+        <span id="stockPrice" style="font-size:20px;font-weight:700;color:var(--accent)">---</span>
+        <span id="weekLabel" class="text-secondary">---</span>
+      </div>
     </div>
-    
-    <!-- ====================================================================
-        底部導航 (Tab Bar)
-       ==================================================================== -->
-    <div class="tab-bar">
-        <button class="tab-item active" data-tab="analyze" onclick="switchTab('analyze')">
-            <span class="icon">📊</span>
-            <span class="label">大戶成本</span>
-        </button>
-        <button class="tab-item" data-tab="watchlist" onclick="switchTab('watchlist')">
-            <span class="icon">📋</span>
-            <span class="label">監測清單</span>
-        </button>
-        <button class="tab-item" data-tab="institution" onclick="switchTab('institution')">
-            <span class="icon">🏢</span>
-            <span class="label">法人成本</span>
-        </button>
-        <button class="tab-item" data-tab="disposal" onclick="switchTab('disposal')">
-            <span class="icon">⚠️</span>
-            <span class="label">處置篩選</span>
-        </button>
+    <div class="card">
+      <div class="card-title">💰 大戶成本</div>
+      <div id="costGrid"></div>
     </div>
-    
-    <!-- JavaScript -->
-    <script src="/app.js"></script>
+    <div class="card">
+      <div class="card-title">📈 關鍵指標</div>
+      <ul class="indicator-list" id="indicatorList"></ul>
+    </div>
+    <div class="card">
+      <div class="card-title">📈 股價 vs 大戶%</div>
+      <div class="chart-container"><canvas id="priceChart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">📋 每週資料</div>
+      <div style="overflow-x:auto"><table><thead><tr><th>日期</th><th>&gt;400張%</th><th>&gt;1000張%</th><th>集中度</th><th>收盤</th></tr></thead><tbody id="detailTableBody"></tbody></table></div>
+    </div>
+    <div class="card">
+      <div class="card-title">📱 LINE 摘要</div>
+      <div class="summary-box" id="lineSummary"></div>
+      <button class="btn btn-primary" onclick="copySummary()">📋 複製到剪貼簿</button>
+    </div>
+  </div>
+</div>
+
+<!-- 其他頁 -->
+<div id="watchlistPage" class="hidden"><div class="card"><div class="card-title">📋 監測清單</div><p class="text-center text-secondary" style="padding:30px">尚無資料</p></div></div>
+<div id="institutionPage" class="hidden"><div class="card"><div class="card-title">🏢 法人成本</div><p class="text-center text-secondary" style="padding:30px">開發中</p></div></div>
+<div id="disposalPage" class="hidden"><div class="card"><div class="card-title">⚠️ 處置篩選</div><p class="text-center text-secondary" style="padding:30px">開發中</p></div></div>
+</div>
+
+<div class="tab-bar">
+  <button class="tab-item active" onclick="switchTab('analyze')"><span class="icon">📊</span><span>大戶成本</span></button>
+  <button class="tab-item" onclick="switchTab('watchlist')"><span class="icon">📋</span><span>監測</span></button>
+  <button class="tab-item" onclick="switchTab('institution')"><span class="icon">🏢</span><span>法人</span></button>
+  <button class="tab-item" onclick="switchTab('disposal')"><span class="icon">⚠️</span><span>處置</span></button>
+</div>
+
+<script>
+// === v1.4 全內聯版，無 Service Worker，不需外部 JS 檔案 ===
+let currentChart = null;
+let isAnalyzing = false;
+let lastResult = null;
+
+// 切換頁面
+function switchTab(name) {
+  document.querySelectorAll('.tab-item').forEach(t=>t.classList.toggle('active',t.textContent.includes(name)||t.getAttribute('onclick').includes(name)));
+  document.getElementById('analyzePage').classList.toggle('hidden', name!=='analyze');
+  document.getElementById('watchlistPage').classList.toggle('hidden', name!=='watchlist');
+  document.getElementById('institutionPage').classList.toggle('hidden', name!=='institution');
+  document.getElementById('disposalPage').classList.toggle('hidden', name!=='disposal');
+}
+
+// 分析股票
+async function analyzeStock() {
+  if (isAnalyzing) return;
+  var code = document.getElementById('codeInput').value.trim();
+  if (!code) { showError('請輸入股票代號'); return; }
+  code = code.padStart(4,'0');
+  document.getElementById('codeInput').value = code;
+  var weeks = parseInt(document.getElementById('weeksInput').value)||1;
+
+  isAnalyzing = true;
+  showLoading(true);
+  hideError();
+  document.getElementById('progressNote').textContent = '';
+
+  var ctrl = new AbortController();
+  var tid = setTimeout(function(){ctrl.abort()},60000);
+
+  // 冷啟動提示
+  var t1 = setTimeout(function(){
+    document.getElementById('progressNote').textContent = '⏳ 伺服器冷啟動中，請耐心等候...';
+    document.getElementById('loadingText').textContent = '伺服器冷啟動中...';
+  }, 5000);
+  var t2 = setTimeout(function(){
+    document.getElementById('progressNote').textContent = '⏳ 仍在計算中...';
+  }, 15000);
+
+  try {
+    var resp = await fetch('/api/analyze', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({code:code, weeks:weeks}),
+      signal: ctrl.signal
+    });
+    var r = await resp.json();
+    if (!resp.ok || !r.success) throw new Error(r.detail||'分析失敗');
+    lastResult = r;
+    displayResult(r);
+  } catch(e) {
+    console.error(e);
+    if (e.name==='AbortError') showError('分析超時（60秒），伺服器冷啟動中，請再試一次');
+    else showError(e.message||'分析失敗');
+  } finally {
+    clearTimeout(tid); clearTimeout(t1); clearTimeout(t2);
+    isAnalyzing = false;
+    showLoading(false);
+    document.getElementById('loadingText').textContent = '正在抓取資料並計算成本...';
+    document.getElementById('progressNote').textContent = '';
+  }
+}
+
+function showLoading(s) {
+  var el = document.getElementById('loading');
+  if (el) el.classList.toggle('active', s);
+  var btn = document.getElementById('analyzeBtn');
+  if (btn) { btn.disabled = s; btn.textContent = s ? '分析中...' : '📊 開始分析'; }
+}
+
+function showError(m) {
+  var el = document.getElementById('errorMessage');
+  if (el) { el.textContent = m; el.classList.remove('hidden'); }
+}
+function hideError() {
+  var el = document.getElementById('errorMessage');
+  if (el) el.classList.add('hidden');
+}
+
+function displayResult(r) {
+  document.getElementById('analysisResult').classList.remove('hidden');
+  document.getElementById('stockTitle').textContent = r.name+'('+r.code+')';
+  document.getElementById('stockPrice').textContent = '現價: '+r.price.toFixed(1)+'元';
+  document.getElementById('weekLabel').textContent = '區間: 最近'+r.weeks+'週';
+
+  // 成本
+  var cg = document.getElementById('costGrid');
+  cg.innerHTML = '';
+  if (r.costs.a) {
+    var prof = ((r.price-r.costs.a)/r.costs.a*100).toFixed(1);
+    cg.innerHTML += '<div class="cost-item"><span class="label">📐 A法 全市場均價</span><span class="value">'+r.costs.a.toFixed(2)+'</span><span class="'+(prof>=0?'profit-up':'profit-down')+'">'+(prof>=0?'+':'')+prof+'%</span></div>';
+  }
+  if (r.costs.d) {
+    var prof = ((r.price-r.costs.d)/r.costs.d*100).toFixed(1);
+    cg.innerHTML += '<div class="cost-item"><span class="label">🎯 D法 主力精算</span><span class="value">'+r.costs.d.toFixed(2)+'</span><span class="'+(prof>=0?'profit-up':'profit-down')+'">'+(prof>=0?'+':'')+prof+'%</span></div>';
+    var dd = r.costs.d_detail;
+    if (dd) {
+      var h = '<div class="d-detail"><div class="d-summary"><span>大戶新增: '+Number(dd.new_shares||0).toLocaleString()+'張</span><span>法人: '+(dd.inst_net>=0?'+':'')+((dd.inst_net||0)/1000).toFixed(0)+'張</span><span>純大戶: '+Number(dd.big_only||0).toLocaleString()+'張</span></div>';
+      if (dd.detail && dd.detail.length) {
+        h += '<div>';
+        for (var i=0; i<dd.detail.length; i++) {
+          var d = dd.detail[i];
+          h += '<div class="d-day"><span>'+d.date+'</span><span>TP='+d.tp+'</span><span>吃貨'+d.big_shares+'張</span></div>';
+        }
+        h += '</div>';
+      }
+      h += '</div>';
+      cg.innerHTML += h;
+    }
+  }
+  if (r.costs.a && r.costs.d) {
+    var sp = (r.costs.a - r.costs.d).toFixed(2);
+    var txt = Math.abs(sp)<=1 ? 'A/D接近，主力成本≈市場均價' : (sp>1 ? 'D法比A法低'+sp+'元 → 主力買在低檔' : 'D法比A法高'+Math.abs(sp)+'元 → 主力追高進場');
+    cg.innerHTML += '<div class="cost-compare">'+txt+'</div>';
+  }
+
+  // 指標
+  var il = document.getElementById('indicatorList');
+  il.innerHTML = '';
+  (r.indicators||[]).forEach(function(i){ var li=document.createElement('li');li.textContent=i;il.appendChild(li); });
+
+  // 圖表
+  var ctx = document.getElementById('priceChart');
+  if (ctx && r.chart_data) {
+    if (currentChart) currentChart.destroy();
+    currentChart = new Chart(ctx, {
+      type:'line', data:{labels:r.chart_data.dates,datasets:[
+        {label:'收盤價',data:r.chart_data.prices,borderColor:'#00d2ff',borderWidth:2,yAxisID:'y',tension:.3},
+        {label:'>400張%',data:r.chart_data.big_pct,borderColor:'#ff6384',borderWidth:2,yAxisID:'y1',tension:.3},
+        {label:'>1000張%',data:r.chart_data.ultra_pct,borderColor:'#ffa500',borderWidth:2,yAxisID:'y1',tension:.3}
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#e0e0e0'}}},scales:{x:{ticks:{color:'#b0b0b0'},grid:{color:'rgba(255,255,255,.1)'}},y:{type:'linear',position:'left',ticks:{color:'#00d2ff'},grid:{color:'rgba(255,255,255,.1)'}},y1:{type:'linear',position:'right',ticks:{color:'#ff6384'},grid:{drawOnChartArea:false}}}}
+    });
+  }
+
+  // 明細
+  var tb = document.getElementById('detailTableBody');
+  if (tb) {
+    tb.innerHTML = '';
+    var dw = (r.detail_weeks||[]).slice(-20);
+    dw.forEach(function(w){
+      var bigChg = w.big_pct_chg!==null ? '<span class="'+(w.big_pct_chg>0?'up':'down')+'">'+(w.big_pct_chg>=0?'+':'')+w.big_pct_chg.toFixed(2)+'%</span>' : '-';
+      var ultraChg = w.ultra_pct_chg!==null ? '<span class="'+(w.ultra_pct_chg>0?'up':'down')+'">'+(w.ultra_pct_chg>=0?'+':'')+w.ultra_pct_chg.toFixed(2)+'%</span>' : '-';
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td>'+w.date+'</td><td>'+w.big_pct.toFixed(2)+'% '+bigChg+'</td><td>'+w.ultra_pct.toFixed(2)+'% '+ultraChg+'</td><td>'+w.conc.toFixed(1)+'%</td><td>'+w.price.toFixed(1)+'</td>';
+      tb.appendChild(tr);
+    });
+  }
+
+  // LINE 摘要
+  document.getElementById('lineSummary').textContent = r.summary||'';
+  document.getElementById('analysisResult').scrollIntoView({behavior:'smooth'});
+}
+
+function copySummary() {
+  var txt = document.getElementById('lineSummary').textContent;
+  if (!txt) { alert('請先分析股票'); return; }
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(txt).then(function(){
+      var b = document.getElementById('copyBtn'); b.textContent='✅ 已複製！'; setTimeout(function(){b.textContent='📋 複製到剪貼簿'},2000);
+    });
+  } else {
+    var ta = document.createElement('textarea'); ta.value = txt; ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.select();
+    document.execCommand('copy');document.body.removeChild(ta);
+    var b = document.getElementById('copyBtn'); b.textContent='✅ 已複製！'; setTimeout(function(){b.textContent='📋 複製到剪貼簿'},2000);
+  }
+}
+
+// 綁定
+document.getElementById('analyzeBtn').addEventListener('click', analyzeStock);
+document.getElementById('codeInput').addEventListener('keypress', function(e){ if(e.key==='Enter') analyzeStock(); });
+</script>
 </body>
 </html>
