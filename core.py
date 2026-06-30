@@ -630,8 +630,17 @@ def fetch_foreign_trade(code, days=30):
 # 成本計算 - v1.3: A法 + D法
 # ============================================================================
 def calc_d_cost(data, start_idx, end_idx, code=None):
-    """D法：主力精算成本
-    回傳 dict: {'cost': float, 'new_shares': float, 'inst_net': int, 'big_only': float, 'detail': list}
+    """D法-主力精算成本 (v1.4)
+    邏輯：計算本週大戶持股%變動代表的「大戶買賣張數」，
+    扣除法人淨買超後，得到「純大戶吃貨/倒貨」張數，
+    依各日成交量比例分配到日K後，以典型價格(TP)加權平均。
+    
+    修正 v1.3 bug：
+    1. 允許大戶持股%下降（賣出）時也計算
+    2. 法人單位驗證（股→張）
+    3. 雲端 .TWO 抓不到日K 時使用週收盤價 fallback
+    
+    回傳 dict: {cost, direction, new_shares, inst_net, big_only, detail}
     """
     seg = data[start_idx:end_idx+1]
     if len(seg) < 1 or not code:
@@ -645,10 +654,12 @@ def calc_d_cost(data, start_idx, end_idx, code=None):
     
     big_chg = last['big_pct'] - prev['big_pct']
     
-    if big_chg <= 0:
+    if abs(big_chg) < 0.01:  # 變動太小沒意義
         return None
     
+    # v1.4: 不論正負都計算
     new_shares = big_chg / 100 * last['total_shares']
+    direction = 'buy' if big_chg > 0 else 'sell'
     
     from datetime import timedelta as _td
     try:
@@ -661,15 +672,24 @@ def calc_d_cost(data, start_idx, end_idx, code=None):
     
     daily = _fetch_daily_yf(code, sd_fetch, ed_fetch)
     if not daily or len(daily) < 2:
-        return None
+        # 雲端 .TWO 抓不到日K，fallback 用週收盤價
+        daily = [{
+            'date': d['date'].replace('/', '-'),
+            'open': d['price'],
+            'high': d['price'],
+            'low': d['price'],
+            'close': d['price'],
+            'volume': max(d.get('total_shares', 100000) * 0.05, 1000000)
+        } for d in seg]
     
     prev_date_str = prev['date'].replace('/', '-')
-    trading_days = [d for d in daily if d['date'] > prev_date_str]
+    last_date_str = last['date'].replace('/', '-')
+    trading_days = [d for d in daily if d['date'] > prev_date_str and d['date'] <= last_date_str]
     
     if not trading_days:
-        return None
+        trading_days = daily
     
-    total_vol = sum(d['volume'] for d in trading_days)
+    total_vol = sum(d.get('volume', 0) for d in trading_days)
     if total_vol <= 0:
         return None
     
@@ -682,52 +702,65 @@ def calc_d_cost(data, start_idx, end_idx, code=None):
                 fd_date = fd['date'].replace('/', '-')
                 net = fd.get('total_net', 0)
                 inst_net_map[fd_date] = net
-                if fd_date > prev_date_str and fd_date <= last['date'].replace('/', '-'):
+                if fd_date > prev_date_str and fd_date <= last_date_str:
                     inst_net_total += net
     except:
         pass
     
-    big_only_shares = new_shares - inst_net_total / 1000
+    # inst_net_total 是「股」，轉成「張」
+    inst_net_lots = inst_net_total / 1000
     
-    if big_only_shares <= 0:
+    # 純大戶吃貨量 = 大戶持股%變動張數 - 法人淨買超(張)
+    big_only_shares = new_shares - inst_net_lots
+    
+    if abs(big_only_shares) < 100:
         return None
     
-    # 按每日「非法人成交量」比例分配大戶吃貨量
+    # 依各日「非法人成交量比例」分配
     non_inst_vols = []
     for d in trading_days:
         inst_net = inst_net_map.get(d['date'], 0)
-        ni_vol = max(d['volume'] - abs(inst_net), 0)
+        ni_vol = max(d.get('volume', 0) - abs(inst_net), 0)
         non_inst_vols.append(ni_vol)
     
     non_inst_total = sum(non_inst_vols)
     
     if non_inst_total <= 0:
-        non_inst_vols = [d['volume'] for d in trading_days]
-        non_inst_total = total_vol
+        non_inst_vols = [d.get('volume', 1) for d in trading_days]
+        non_inst_total = sum(non_inst_vols)
     
+    # 計算加權：D 成本 = Σ(TP × |day_shares|) / Σ|day_shares|
     d_wsum = 0
+    w_total = 0
     detail = []
     for i, d in enumerate(trading_days):
         vol_ratio = non_inst_vols[i] / non_inst_total
         day_shares = big_only_shares * vol_ratio
-        tp = (d['high'] + d['low'] + d['close']) / 3
-        d_wsum += tp * day_shares
+        tp = (d.get('high', 0) + d.get('low', 0) + d.get('close', 0)) / 3
+        d_wsum += tp * abs(day_shares)
+        w_total += abs(day_shares)
         inst_net = inst_net_map.get(d['date'], 0)
         detail.append({
             'date': d['date'],
-            'vol': d['volume'],
+            'vol': d.get('volume', 0),
             'non_inst_vol': non_inst_vols[i],
             'tp': round(tp, 1),
             'inst_net': inst_net,
             'big_shares': round(day_shares, 0),
         })
     
-    d_cost = d_wsum / big_only_shares
+    if w_total == 0:
+        return None
+    
+    d_cost = d_wsum / w_total
     
     return {
         'cost': round(d_cost, 2),
+        'direction': direction,
+        'big_chg': round(big_chg, 2),
         'new_shares': round(new_shares, 0),
         'inst_net': inst_net_total,
+        'inst_net_lots': round(inst_net_lots, 0),
         'big_only': round(big_only_shares, 0),
         'detail': detail,
     }
